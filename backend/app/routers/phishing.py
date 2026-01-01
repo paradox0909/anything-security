@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+import os
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Response
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
@@ -94,6 +95,7 @@ def create_campaign(
     db_campaign = models.PhishingCampaign(
         name=campaign.name,
         template_id=campaign.template_id,
+        target_url=campaign.target_url or "https://example.com",
         scheduled_at=campaign.scheduled_at,
         status="draft"
     )
@@ -101,11 +103,19 @@ def create_campaign(
     db.commit()
     db.refresh(db_campaign)
     
-    # 수신자 추가
+    # 수신자 추가 (UUID 생성)
+    # 웹에서 입력받은 recipient_emails 사용
+    if not campaign.recipient_emails:
+        raise HTTPException(
+            status_code=400,
+            detail="recipient_emails is required. Please provide at least one recipient email."
+        )
+    
     for email in campaign.recipient_emails:
         recipient = models.PhishingRecipient(
             campaign_id=db_campaign.id,
             email=email,
+            uuid=TrackingService.generate_uuid()
         )
         db.add(recipient)
     
@@ -130,7 +140,15 @@ def get_campaigns(
     db: Session = Depends(get_db)
 ):
     """피싱 캠페인 목록 조회"""
-    campaigns = db.query(models.PhishingCampaign).offset(skip).limit(limit).all()
+    # 과거 데이터/테스트로 template_id가 NULL인 깨진 레코드가 있을 수 있음.
+    # response_model(PhishingCampaign)에서 template_id는 int라서 NULL이면 500이 나므로 제외한다.
+    campaigns = (
+        db.query(models.PhishingCampaign)
+        .filter(models.PhishingCampaign.template_id.isnot(None))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return campaigns
 
 @router.get("/campaigns/{campaign_id}", response_model=schemas.PhishingCampaign)
@@ -168,69 +186,166 @@ def get_campaign_stats(
     ).all()
     
     total = len(recipients)
+    opened = sum(1 for r in recipients if r.opened)
     clicked = sum(1 for r in recipients if r.clicked)
     reported = sum(1 for r in recipients if r.reported)
     
     return {
         "total_recipients": total,
+        "opened": opened,
         "clicked": clicked,
         "reported": reported,
+        "open_rate": (opened / total * 100) if total > 0 else 0,
         "click_rate": (clicked / total * 100) if total > 0 else 0,
         "report_rate": (reported / total * 100) if total > 0 else 0
     }
 
-@router.post("/track/click/{tracking_token}")
-def track_click(
-    tracking_token: str,
+@router.get("/track/open/{recipient_uuid}")
+def track_open(
+    recipient_uuid: str,
     db: Session = Depends(get_db)
 ):
-    """링크 클릭 추적"""
-    recipient = TrackingService.get_recipient_by_token(tracking_token, db)
+    """메일 오픈 추적 (Tracking Pixel)"""
+    recipient = TrackingService.get_recipient_by_uuid(recipient_uuid, db)
+    if recipient and not recipient.opened:
+        recipient.opened = True
+        recipient.opened_at = datetime.now()
+        db.commit()
+    
+    # 1x1 투명 픽셀 이미지 반환
+    pixel = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xdb\x00\x00\x00\x00IEND\xaeB`\x82'
+    return Response(content=pixel, media_type="image/png")
+
+@router.get("/track/click/{recipient_uuid}")
+def track_click(
+    recipient_uuid: str,
+    target_url: str = "https://example.com",
+    db: Session = Depends(get_db)
+):
+    """링크 클릭 추적 및 리다이렉트"""
+    recipient = TrackingService.get_recipient_by_uuid(recipient_uuid, db)
     if recipient and not recipient.clicked:
         recipient.clicked = True
         recipient.clicked_at = datetime.now()
         db.commit()
-    return {"status": "tracked"}
+    
+    # 실제 목적지로 리다이렉트
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=target_url)
 
-@router.post("/track/report/{tracking_token}")
+@router.post("/track/report/{recipient_uuid}")
 def track_report(
-    tracking_token: str,
+    recipient_uuid: str,
     db: Session = Depends(get_db)
 ):
     """피싱 신고 추적"""
-    recipient = TrackingService.get_recipient_by_token(tracking_token, db)
+    recipient = TrackingService.get_recipient_by_uuid(recipient_uuid, db)
     if recipient and not recipient.reported:
         recipient.reported = True
         recipient.reported_at = datetime.now()
         db.commit()
     return {"status": "reported"}
 
+@router.post("/campaigns/{campaign_id}/close")
+def close_campaign(
+    campaign_id: int,
+    db: Session = Depends(get_db)
+):
+    """프로젝트 종료"""
+    campaign = db.query(models.PhishingCampaign).filter(
+        models.PhishingCampaign.id == campaign_id
+    ).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    if campaign.status == "closed":
+        raise HTTPException(status_code=400, detail="Campaign already closed")
+    
+    campaign.status = "closed"
+    campaign.closed_at = datetime.now()
+    db.commit()
+    
+    return {"message": "Campaign closed successfully", "campaign": campaign}
+
 def send_campaign_emails(campaign_id: int):
-    """백그라운드에서 캠페인 이메일 발송"""
+    """백그라운드에서 캠페인 이메일 발송 (동기 래퍼)"""
+    import asyncio
     from app.database import SessionLocal
-    db = SessionLocal()
+    
+    print(f"[send_campaign_emails] Starting email sending for campaign {campaign_id}")
+    
+    async def send_emails_async():
+        db = SessionLocal()
+        try:
+            campaign = db.query(models.PhishingCampaign).filter(
+                models.PhishingCampaign.id == campaign_id
+            ).first()
+            if not campaign:
+                print(f"[send_campaign_emails] Campaign {campaign_id} not found")
+                return
+            
+            print(f"[send_campaign_emails] Found campaign: {campaign.name}")
+            
+            template = db.query(models.PhishingTemplate).filter(
+                models.PhishingTemplate.id == campaign.template_id
+            ).first()
+            if not template:
+                print(f"[send_campaign_emails] Template {campaign.template_id} not found")
+                return
+            
+            print(f"[send_campaign_emails] Found template: {template.name}")
+            
+            recipients = db.query(models.PhishingRecipient).filter(
+                models.PhishingRecipient.campaign_id == campaign_id
+            ).all()
+            
+            print(f"[send_campaign_emails] Found {len(recipients)} recipients")
+            
+            email_service = EmailService()
+            
+            # 캠페인의 target_url 사용
+            target_url = campaign.target_url or 'https://example.com'
+            
+            for recipient in recipients:
+                try:
+                    print(f"[send_campaign_emails] Sending email to {recipient.email}")
+                    await email_service.send_phishing_email(
+                        recipient_email=recipient.email,
+                        recipient_name=recipient.name,
+                        template=template,
+                        recipient_uuid=recipient.uuid,
+                        target_url=target_url
+                    )
+                    recipient.sent_at = datetime.now()
+                    print(f"[send_campaign_emails] Successfully sent email to {recipient.email}")
+                except Exception as e:
+                    print(f"[send_campaign_emails] Failed to send email to {recipient.email}: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            db.commit()
+            print(f"[send_campaign_emails] Completed sending emails for campaign {campaign_id}")
+        except Exception as e:
+            print(f"[send_campaign_emails] Error in send_emails_async: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            db.close()
+    
+    # 이벤트 루프 생성 및 실행
     try:
-        campaign = db.query(models.PhishingCampaign).filter(
-            models.PhishingCampaign.id == campaign_id
-        ).first()
-        if not campaign:
-            return
-        
-        template = campaign.template
-        recipients = campaign.recipients
-        
-        email_service = EmailService()
-        
-        for recipient in recipients:
-            tracking_token = TrackingService.generate_token(recipient.id)
-            email_service.send_phishing_email(
-                recipient_email=recipient.email,
-                template=template,
-                tracking_token=tracking_token
-            )
-            recipient.sent_at = datetime.now()
-        
-        db.commit()
-    finally:
-        db.close()
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    try:
+        loop.run_until_complete(send_emails_async())
+    except Exception as e:
+        print(f"[send_campaign_emails] Error running async function: {e}")
+        import traceback
+        traceback.print_exc()
 

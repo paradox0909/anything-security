@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.database import engine, Base
-from app.routers import phishing, assets, cve
+from app.routers import phishing, assets, cve, test_tracking
 
 # 데이터베이스 테이블 생성
 @asynccontextmanager
@@ -33,6 +33,7 @@ app.add_middleware(
 app.include_router(phishing.router, prefix="/api/phishing", tags=["phishing"])
 app.include_router(assets.router, prefix="/api/assets", tags=["assets"])
 app.include_router(cve.router, prefix="/api/cve", tags=["cve"])
+app.include_router(test_tracking.router, prefix="/api/test", tags=["test"])
 
 @app.get("/")
 async def root():

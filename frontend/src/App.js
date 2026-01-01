@@ -1,31 +1,35 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './App.css';
-import PhishingTraining from './components/PhishingTraining';
+import Sidebar from './components/Sidebar';
+import Dashboard from './components/Dashboard';
+import Campaigns from './components/Campaigns';
+import UsersGroups from './components/UsersGroups';
+import EmailTemplates from './components/EmailTemplates';
+import LandingPages from './components/LandingPages';
+import SendingProfiles from './components/SendingProfiles';
 import AssetManagement from './components/AssetManagement';
 import CVEMonitoring from './components/CVEMonitoring';
-import Dashboard from './components/Dashboard';
 
 function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const toggleSidebar = () => {
+    setSidebarOpen(!sidebarOpen);
+  };
+
   return (
     <Router>
       <div className="App">
-        <nav className="navbar">
-          <div className="nav-container">
-            <h1 className="nav-logo">🛡️ Anything Security</h1>
-            <ul className="nav-menu">
-              <li><Link to="/">대시보드</Link></li>
-              <li><Link to="/phishing">피싱 훈련</Link></li>
-              <li><Link to="/assets">자산 관리</Link></li>
-              <li><Link to="/cve">CVE 모니터링</Link></li>
-            </ul>
-          </div>
-        </nav>
-        
-        <main className="main-content">
+        <Sidebar isOpen={sidebarOpen} toggleSidebar={toggleSidebar} />
+        <main className={`main-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/phishing" element={<PhishingTraining />} />
+            <Route path="/campaigns" element={<Campaigns />} />
+            <Route path="/users" element={<UsersGroups />} />
+            <Route path="/email-templates" element={<EmailTemplates />} />
+            <Route path="/landing-pages" element={<LandingPages />} />
+            <Route path="/sending-profiles" element={<SendingProfiles />} />
             <Route path="/assets" element={<AssetManagement />} />
             <Route path="/cve" element={<CVEMonitoring />} />
           </Routes>
@@ -36,4 +40,3 @@ function App() {
 }
 
 export default App;
-

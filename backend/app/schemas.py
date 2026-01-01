@@ -34,14 +34,16 @@ class PhishingTemplate(PhishingTemplateBase):
 class PhishingCampaignBase(BaseModel):
     name: str
     template_id: int
+    target_url: Optional[str] = "https://example.com"
     scheduled_at: Optional[datetime] = None
 
 class PhishingCampaignCreate(PhishingCampaignBase):
-    recipient_emails: List[EmailStr]
+    recipient_emails: List[EmailStr]  # 웹에서 입력받음
 
 class PhishingCampaign(PhishingCampaignBase):
     id: int
     status: str
+    closed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     
@@ -56,6 +58,9 @@ class PhishingRecipientBase(BaseModel):
 class PhishingRecipient(PhishingRecipientBase):
     id: int
     campaign_id: int
+    uuid: str
+    opened: bool
+    opened_at: Optional[datetime] = None
     clicked: bool
     clicked_at: Optional[datetime] = None
     reported: bool

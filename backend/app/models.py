@@ -26,8 +26,10 @@ class PhishingCampaign(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     template_id = Column(Integer, ForeignKey("phishing_templates.id"))
-    status = Column(String(50), default="draft")  # draft, scheduled, sent, completed
+    status = Column(String(50), default="draft")  # draft, scheduled, sent, completed, closed
+    target_url = Column(String(500), default="https://example.com")  # 클릭 시 이동할 URL
     scheduled_at = Column(DateTime(timezone=True))
+    closed_at = Column(DateTime(timezone=True))  # 프로젝트 종료 시간
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
@@ -42,6 +44,9 @@ class PhishingRecipient(Base):
     campaign_id = Column(Integer, ForeignKey("phishing_campaigns.id"))
     email = Column(String(255), nullable=False)
     name = Column(String(255))
+    uuid = Column(String(36), unique=True, nullable=False, index=True)  # UUID for tracking
+    opened = Column(Boolean, default=False)  # 메일 오픈 추적
+    opened_at = Column(DateTime(timezone=True))
     clicked = Column(Boolean, default=False)
     clicked_at = Column(DateTime(timezone=True))
     reported = Column(Boolean, default=False)

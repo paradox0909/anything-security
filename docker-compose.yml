@@ -27,15 +27,22 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: security_backend
+    env_file:
+      - .env
     environment:
       DATABASE_URL: mysql+pymysql://security_user:security_password@mysql:3306/security_platform
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       SLACK_CHANNEL_ID: ${SLACK_CHANNEL_ID:-}
-      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-25}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-no-reply@security.local}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Security Team}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      SMTP_SSL_TLS: ${SMTP_SSL_TLS:-false}
+      TEST_EMAIL: ${TEST_EMAIL:-}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8000}
       NVD_API_KEY: ${NVD_API_KEY:-}
     ports:
       - "8000:8000"

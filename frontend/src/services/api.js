@@ -22,6 +22,7 @@ export const getPhishingCampaign = (id) => api.get(`/api/phishing/campaigns/${id
 export const createPhishingCampaign = (data) => api.post('/api/phishing/campaigns', data);
 export const getCampaignRecipients = (id) => api.get(`/api/phishing/campaigns/${id}/recipients`);
 export const getCampaignStats = (id) => api.get(`/api/phishing/campaigns/${id}/stats`);
+export const closePhishingCampaign = (id) => api.post(`/api/phishing/campaigns/${id}/close`);
 
 // 자산 관리
 export const getAssets = (params) => api.get('/api/assets/', { params });

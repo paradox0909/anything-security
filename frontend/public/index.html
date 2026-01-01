@@ -8,6 +8,12 @@
       name="description"
       content="Anything Security Platform - 보안 관리 All-in-One 플랫폼"
     />
+    <!-- Content Security Policy: 개발 환경에서 React Quill 사용을 위해 unsafe-eval 허용 -->
+    <!-- 프로덕션 환경에서는 더 엄격한 CSP 정책을 사용해야 합니다 -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' http://localhost:8000 http://backend:8000;"
+    />
     <title>Anything Security Platform</title>
   </head>
   <body>
